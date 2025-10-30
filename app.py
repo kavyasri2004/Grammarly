@@ -43,7 +43,7 @@ def configure_gemini():
         genai.configure(api_key=GEMINI_API_KEY)
         model = genai.GenerativeModel("gemini-1.5-flash")
         use_gemini = True
-        print("✅ Gemini connected (online mode).")
+        print("Gemini connected (online mode).")
     except Exception as e:
         print("⚠ Gemini setup failed:", e)
         use_gemini = False
@@ -62,7 +62,7 @@ class TextInput(BaseModel):
 @app.get("/")
 def root():
     mode = "Online (Gemini)" if use_gemini else "Offline (TextBlob)"
-    return {"message": f"Grammar Assistant running in {mode} mode 🚀"}
+    return {"message": f"Grammar Assistant running in {mode} mode "}
 
 
 @app.post("/check")
@@ -91,7 +91,7 @@ def check_grammar(data: TextInput):
                 "explanation": parsed.get("explanation", "No explanation."),
             }
         except Exception as e:
-            print("⚠ Gemini error, switching to offline mode:", e)
+            print("Gemini error, switching to offline mode:", e)
             use_gemini = False
 
     # -------------------- OFFLINE (TEXTBLOB) -------------------- #
