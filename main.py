@@ -36,7 +36,7 @@ def show_popup(original, suggestion, explanation):
     tk.Label(popup, text="Suggestion:", font=("Arial", 10, "bold")).pack(anchor="w", padx=10, pady=(10,0))
     tk.Label(popup, text=suggestion, fg="green", wraplength=400, justify="left").pack(anchor="w", padx=10)
 
-    tk.Label(popup, text=f"💬 {explanation}", wraplength=400, justify="left", fg="gray").pack(anchor="w", padx=10, pady=(5,10))
+    tk.Label(popup, text=f" {explanation}", wraplength=400, justify="left", fg="gray").pack(anchor="w", padx=10, pady=(5,10))
 
     def replace_text():
         pyautogui.hotkey("ctrl", "a")
@@ -49,14 +49,14 @@ def show_popup(original, suggestion, explanation):
 
     button_frame = tk.Frame(popup)
     button_frame.pack(pady=10)
-    tk.Button(button_frame, text="✅ Replace", command=replace_text, bg="green", fg="white", width=12).pack(side="left", padx=10)
-    tk.Button(button_frame, text="❌ Ignore", command=ignore_text, bg="red", fg="white", width=12).pack(side="right", padx=10)
+    tk.Button(button_frame, text=" Replace", command=replace_text, bg="green", fg="white", width=12).pack(side="left", padx=10)
+    tk.Button(button_frame, text=" Ignore", command=ignore_text, bg="red", fg="white", width=12).pack(side="right", padx=10)
 
     popup.mainloop()
 
 def monitor_keyboard():
     global buffer, last_time
-    print("⌨ Grammar assistant running — type anywhere (Notepad, browser, etc).")
+    print(" Grammar assistant running — type anywhere (Notepad, browser, etc).")
     while True:
         try:
             event = keyboard.read_event()
