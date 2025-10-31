@@ -1,115 +1,103 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from dotenv import load_dotenv
 import os
-import socket
-from textblob import TextBlob
+import json
+import re
+import google.generativeai as genai
+import asyncio
 
-# Optional: Gemini (Google Generative AI) - used only if key & internet are available
-try:
-    import google.generativeai as genai
-except Exception:
-    genai = None
+# --- Load environment variables from .env (local) ---
+load_dotenv()
 
-app = FastAPI(title="Python Grammar Assistant (TextBlob offline + Gemini online)")
+# --- FastAPI app ---
+app = FastAPI()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-use_gemini = False
-model = None
+# --- Gemini setup ---
+GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_KEY:
+    raise RuntimeError(" Missing GEMINI_API_KEY — please set it in .env or environment variables")
 
+genai.configure(api_key=GEMINI_KEY)
 
-# -------------------- INTERNET CHECK -------------------- #
-def is_internet_available(host="8.8.8.8", port=53, timeout=2):
-    try:
-        socket.setdefaulttimeout(timeout)
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((host, port))
-        s.close()
-        return True
-    except Exception:
-        return False
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+model = genai.GenerativeModel(MODEL_NAME)
 
-
-# -------------------- GEMINI CONFIG -------------------- #
-def configure_gemini():
-    """Connect Gemini model if API key + internet exist."""
-    global use_gemini, model
-    if genai is None:
-        use_gemini = False
-        return
-    if not GEMINI_API_KEY or not is_internet_available():
-        use_gemini = False
-        return
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        use_gemini = True
-        print("Gemini connected (online mode).")
-    except Exception as e:
-        print("⚠ Gemini setup failed:", e)
-        use_gemini = False
-
-
-# Try to set up Gemini at startup
-configure_gemini()
-
-
-# -------------------- DATA MODEL -------------------- #
-class TextInput(BaseModel):
+# --- Request/Response Models ---
+class CheckRequest(BaseModel):
     text: str
+    language: str = "auto"
 
+class CheckResponse(BaseModel):
+    original: str
+    suggestion: str
+    explanation: str
 
-# -------------------- ROUTES -------------------- #
-@app.get("/")
-def root():
-    mode = "Online (Gemini)" if use_gemini else "Offline (TextBlob)"
-    return {"message": f"Grammar Assistant running in {mode} mode "}
+# --- API endpoint ---
+@app.post("/check", response_model=CheckResponse)
+async def check(req: CheckRequest):
+    prompt = f"""
+You are a professional English grammar assistant. Follow these strict rules exactly:
+1) Fix grammar, spelling, punctuation, and sentence structure so the output is one natural, fluent sentence.
+2) Ensure tense and verb agreement are consistent across clauses.
+3) Preserve the original meaning; do NOT invent new facts.
+4) Output only valid JSON and nothing else, in this exact shape:
+{{"corrected": "<corrected sentence>"}}
 
-
-@app.post("/check")
-def check_grammar(data: TextInput):
-    text = data.text.strip()
-    global use_gemini
-
-    # Recheck internet / switch modes dynamically
-    if is_internet_available() and not use_gemini:
-        configure_gemini()
-    elif not is_internet_available() and use_gemini:
-        use_gemini = False
-
-    # -------------------- ONLINE (GEMINI) -------------------- #
-    if use_gemini:
-        try:
-            prompt = (
-                f'Correct the following text and explain briefly. '
-                f'Respond in JSON with keys: corrected_text, explanation.\\nText: "{text}"'
-            )
-            response = model.generate_content(prompt)
-            import json
-            parsed = json.loads(response.text)
-            return {
-                "suggestion": parsed.get("corrected_text", text),
-                "explanation": parsed.get("explanation", "No explanation."),
-            }
-        except Exception as e:
-            print("Gemini error, switching to offline mode:", e)
-            use_gemini = False
-
-    # -------------------- OFFLINE (TEXTBLOB) -------------------- #
+Text: {req.text}
+"""
     try:
-        blob = TextBlob(text)
-        corrected = str(blob.correct())
-        explanation = (
-            "Corrected using TextBlob (offline). "
-            "TextBlob performs spelling correction and simple grammar improvements."
+        response = await asyncio.wait_for(
+            model.generate_content_async(prompt),
+            timeout=30
+        )
+
+        raw = getattr(response, "text", None)
+        if not raw and response.candidates:
+            raw = response.candidates[0].content.parts[0].text
+
+    except asyncio.TimeoutError:
+        return CheckResponse(
+            original=req.text,
+            suggestion=req.text,
+            explanation=" Gemini request timed out, returned original text."
         )
     except Exception as e:
-        corrected = text
-        explanation = f"Offline correction failed: {e}"
+        return CheckResponse(
+            original=req.text,
+            suggestion=req.text,
+            explanation=f"⚠ Gemini error: {e}, returned original text."
+        )
 
-    return {"suggestion": corrected, "explanation": explanation}
+    if not raw:
+        return CheckResponse(
+            original=req.text,
+            suggestion=req.text,
+            explanation=" No response from Gemini, returned original text."
+        )
 
+    raw = raw.strip()
 
-# -------------------- RUN SERVER -------------------- #
-def run_server(host="127.0.0.1", port=5000):
-    import uvicorn
-    uvicorn.run("backend.app:app", host=host, port=port, reload=False)
+    # --- Extract JSON safely ---
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    corrected = ""
+
+    if match:
+        json_str = match.group(0)
+        try:
+            data = json.loads(json_str)
+            corrected = data.get("corrected", "").strip()
+        except Exception:
+            corrected = raw.strip()
+    else:
+        corrected = raw.strip()
+
+    # --- Fallback if empty ---
+    if not corrected:
+        corrected = req.text.strip()
+
+    return CheckResponse(
+        original=req.text,
+        suggestion=corrected,
+        explanation=" Grammar corrected"
+    )
