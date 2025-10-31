@@ -7,8 +7,10 @@ import re
 import google.generativeai as genai
 import asyncio
 
-# --- Load environment variables from .env (local) ---
-load_dotenv()
+
+# Force load .env from the same directory as this file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
+
 
 # --- FastAPI app ---
 app = FastAPI()
@@ -16,7 +18,7 @@ app = FastAPI()
 # --- Gemini setup ---
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_KEY:
-    raise RuntimeError(" Missing GEMINI_API_KEY — please set it in .env or environment variables")
+    raise RuntimeError("❌ Missing GEMINI_API_KEY — please set it in .env or environment variables")
 
 genai.configure(api_key=GEMINI_KEY)
 
@@ -60,7 +62,7 @@ Text: {req.text}
         return CheckResponse(
             original=req.text,
             suggestion=req.text,
-            explanation=" Gemini request timed out, returned original text."
+            explanation="⏳ Gemini request timed out, returned original text."
         )
     except Exception as e:
         return CheckResponse(
@@ -73,7 +75,7 @@ Text: {req.text}
         return CheckResponse(
             original=req.text,
             suggestion=req.text,
-            explanation=" No response from Gemini, returned original text."
+            explanation="⚠ No response from Gemini, returned original text."
         )
 
     raw = raw.strip()
@@ -99,5 +101,5 @@ Text: {req.text}
     return CheckResponse(
         original=req.text,
         suggestion=corrected,
-        explanation=" Grammar corrected"
+        explanation="✅ Grammar corrected"
     )
