@@ -55,10 +55,3 @@ Requirements
 •	Python 3.9 or higher
 •	Frontend Python packages: keyboard, tkinter, pyautogui, pyperclip, requests
 •	Backend Python packages: fastapi, pydantic, uvicorn, textblob, google-generativeai (optional)
-________________________________________
-License
-Open-source. Free for educational and personal use.
-________________________________________
-If you want, I can also draft a “full ready-to-run launcher.py + frontend/main.py + backend/app.py” template that is fully offline-ready with TextBlob and Gemini optional. This will make it plug-and-play.
-Do you want me to do that next?
-
