@@ -5,12 +5,13 @@ import time
 import tkinter as tk
 import pyautogui
 import pyperclip
+import pygetwindow as gw  # ✅ NEW: to detect active window
 
 
 # ---------------------- API FUNCTION ---------------------- #
 def get_api_key():
     """Return the full API key (endpoint URL)."""
-    return "http://127.0.0.1:5000/check"   # change this to your deployed API endpoint later
+    return "http://127.0.0.1:5000/check"   # 🔹 change this to your deployed API endpoint later
 
 
 buffer = ""
@@ -19,12 +20,26 @@ latest_suggestion = None
 latest_original = None
 popup = None
 capture_enabled = True  # pause listening during replace
+last_window = None      # ✅ Track current window
+
+
+# ---------------------- Utility: Active Window ---------------------- #
+def get_active_window_title():
+    """Return title of current active window."""
+    try:
+        win = gw.getActiveWindow()
+        if win:
+            return win.title
+    except:
+        pass
+    return None
 
 
 # ---------------------- Grammar Check ---------------------- #
 def process_sentence(sentence):
     """Send sentence to backend and store correction suggestion."""
     global latest_suggestion, latest_original
+    # ❌ Removed buffer = "" to keep multi-line state
     if not capture_enabled:
         return
 
@@ -37,15 +52,15 @@ def process_sentence(sentence):
             if suggestion and suggestion != sentence:
                 latest_original = sentence
                 latest_suggestion = suggestion
-                print(" Suggestion ready. Hover near text to view correction.")
+                print("💡 Suggestion ready. Hover near text to view correction.")
             else:
                 latest_original = None
                 latest_suggestion = None
-                print(" No correction needed.")
+                print("✅ No correction needed.")
         else:
             print("⚠ Backend error:", res.status_code, res.text)
     except Exception as e:
-        print(" Error sending to backend:", e)
+        print("❌ Error sending to backend:", e)
 
 
 # ---------------------- Popup Display ---------------------- #
@@ -98,10 +113,12 @@ def replace_and_close(original, suggestion):
     """Replace text and close popup."""
     hide_popup()
     replace_in_text(original, suggestion)
-    global latest_suggestion, latest_original
+    global latest_suggestion, latest_original, buffer
     latest_suggestion = None
     latest_original = None
-    print(" Replaced and closed popup.")
+    buffer = ""  # ✅ clear any leftover text so idle_check doesn’t re-trigger
+    print("✅ Replaced and closed popup.")
+
 
 
 # ---------------------- Replace Logic ---------------------- #
@@ -118,10 +135,8 @@ def replace_in_text(original, suggestion):
         time.sleep(0.05)
         text = pyperclip.paste()
 
-        # Clean up both sides
         original_clean = original.strip()
         suggestion_clean = suggestion.strip()
-
         idx = text.rfind(original_clean)
 
         if idx != -1:
@@ -134,20 +149,19 @@ def replace_in_text(original, suggestion):
                 else:
                     new_text += "\n" + after
         else:
-            print(" Original not found, replacing last sentence heuristically.")
+            print("⚠ Original not found, replacing last sentence heuristically.")
             last_punc = max(text.rfind('.'), text.rfind('!'), text.rfind('?'))
             if last_punc != -1:
                 new_text = text[:last_punc+1].rstrip() + "\n" + suggestion_clean
             else:
                 new_text = suggestion_clean
 
-        # Apply corrected text
         keyboard.press_and_release('ctrl+a')
         time.sleep(0.05)
         keyboard.press_and_release('backspace')
         time.sleep(0.05)
         keyboard.write(new_text)
-        print(" Cleanly replaced only the last sentence.")
+        print("✅ Cleanly replaced only the last sentence.")
 
     finally:
         time.sleep(0.5)
@@ -157,29 +171,31 @@ def replace_in_text(original, suggestion):
 # ---------------------- Keyboard Hook ---------------------- #
 def on_key(event):
     """Capture typing globally, ignoring Ctrl shortcuts."""
-    global buffer, last_time
+    global buffer, last_time, last_window
     if not capture_enabled:
         return
-
     if event.event_type != keyboard.KEY_DOWN:
+        return
+
+    # ✅ Detect window change and reset buffer
+    current_window = get_active_window_title()
+    if last_window != current_window:
+        buffer = ""
+        last_window = current_window
+        print(f"🔄 Switched to: {current_window}")
         return
 
     name = event.name.lower()
     last_time = time.time()
 
-    #  Ignore system/modifier keys
-    if name in [
-        'ctrl', 'shift', 'alt', 'caps lock', 'tab', 'esc',
-        'windows', 'cmd', 'option'
-    ]:
+    if name in ['ctrl', 'shift', 'alt', 'caps lock', 'tab', 'esc', 'windows', 'cmd', 'option']:
         return
 
-    #  Ignore control shortcuts
     if keyboard.is_pressed('ctrl'):
         if name in ['c', 'v', 'x', 'a', 'z', 'y', 's']:
             return
 
-    #  Handle normal typing
+    # ✅ Handle normal typing
     if len(name) == 1:
         buffer += name
         if name in ".?!":
@@ -192,10 +208,14 @@ def on_key(event):
     elif name == "backspace":
         buffer = buffer[:-1]
     elif name == "enter":
-        sentence = buffer.strip()
-        if sentence:
-            threading.Thread(target=process_sentence, args=(sentence,)).start()
-        buffer = ""
+        # ✅ Only trigger grammar check on Ctrl + Enter
+        if keyboard.is_pressed("ctrl"):
+            sentence = buffer.strip()
+            if sentence:
+                threading.Thread(target=process_sentence, args=(sentence,)).start()
+            buffer = ""
+        else:
+            buffer += "\n"  # normal newline (no processing)
 
 
 # ---------------------- Hover Watcher ---------------------- #
